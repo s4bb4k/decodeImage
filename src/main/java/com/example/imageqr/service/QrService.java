@@ -9,41 +9,34 @@ import org.opencv.objdetect.QRCodeDetector;
 import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.InputStream;
 import java.util.*;
+import java.util.List;
 
 @Service
 public class QrService {
 
     private final ObjectMapper mapper = new ObjectMapper();
 
-    static {
-        nu.pattern.OpenCV.loadLocally();
-    }
-
     public Object decodeQR(InputStream inputStream) throws Exception {
 
         BufferedImage image = ImageIO.read(inputStream);
 
         if (image == null) {
-            throw new RuntimeException("Imagen inválida");
+            throw new RuntimeException("Imagen inválida o formato no soportado");
         }
 
-        // 🔥 PREPROCESAMIENTO
-        image = toGrayscale(image);
-        image = increaseContrast(image);
+        // 🔥 PIPELINE PARA JPG (ORDEN IMPORTANTE)
+        image = resize(image, 2);          // mejora resolución
+        image = toGrayscale(image);        // elimina ruido de color
+        image = binarize(image);           // convierte a blanco/negro real
 
-        // 🔄 Intentar con ZXing + rotaciones
-        try {
-            String result = tryDecodeWithRotations(image);
-            return parseNestedJson(result);
-        } catch (Exception ignored) {}
+        // 🔄 Intentar lectura con rotaciones
+        String qrText = tryDecodeWithRotations(image);
 
-        // 🧠 Fallback OpenCV (corrige inclinación)
-        String opencvResult = decodeWithOpenCV(image);
-
-        return parseNestedJson(opencvResult);
+        return parseNestedJson(qrText);
     }
 
     // ============================
@@ -59,18 +52,19 @@ public class QrService {
         Reader reader = new MultiFormatReader();
 
         for (int i = 0; i < 4; i++) {
-
             try {
                 LuminanceSource source = new BufferedImageLuminanceSource(image);
                 BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(source));
+
                 Result result = reader.decode(bitmap, hints);
                 return result.getText();
+
             } catch (Exception ignored) {}
 
             image = rotateImage(image);
         }
 
-        throw new RuntimeException("No se pudo decodificar con ZXing");
+        throw new RuntimeException("No se pudo leer el QR (incluso después de rotaciones)");
     }
 
     private BufferedImage rotateImage(BufferedImage image) {
@@ -90,75 +84,66 @@ public class QrService {
     }
 
     // ============================
-    // OpenCV fallback
+    // PREPROCESAMIENTO (CLAVE JPG)
     // ============================
 
-    private String decodeWithOpenCV(BufferedImage bufferedImage) {
+    private BufferedImage resize(BufferedImage original, int scale) {
 
-        Mat mat = bufferedImageToMat(bufferedImage);
+        int width = original.getWidth() * scale;
+        int height = original.getHeight() * scale;
 
-        QRCodeDetector detector = new QRCodeDetector();
-        Mat points = new Mat();
+        BufferedImage resized = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
 
-        String data = detector.detectAndDecode(mat, points);
+        Graphics2D g = resized.createGraphics();
+        g.drawImage(original, 0, 0, width, height, null);
+        g.dispose();
 
-        if (data == null || data.isEmpty()) {
-            throw new RuntimeException("No se pudo leer el QR con OpenCV");
-        }
-
-        return data;
+        return resized;
     }
-
-    private Mat bufferedImageToMat(BufferedImage bi) {
-
-        Mat mat = new Mat(bi.getHeight(), bi.getWidth(), CvType.CV_8UC3);
-
-        int[] data = bi.getRGB(0, 0, bi.getWidth(), bi.getHeight(), null, 0, bi.getWidth());
-        byte[] bytes = new byte[data.length * 3];
-
-        for (int i = 0; i < data.length; i++) {
-            bytes[i * 3] = (byte) ((data[i] >> 16) & 0xFF);
-            bytes[i * 3 + 1] = (byte) ((data[i] >> 8) & 0xFF);
-            bytes[i * 3 + 2] = (byte) (data[i] & 0xFF);
-        }
-
-        mat.put(0, 0, bytes);
-        return mat;
-    }
-
-    // ============================
-    // PREPROCESAMIENTO
-    // ============================
 
     private BufferedImage toGrayscale(BufferedImage original) {
+
         BufferedImage gray = new BufferedImage(
                 original.getWidth(),
                 original.getHeight(),
                 BufferedImage.TYPE_BYTE_GRAY
         );
-        gray.getGraphics().drawImage(original, 0, 0, null);
+
+        Graphics g = gray.getGraphics();
+        g.drawImage(original, 0, 0, null);
+        g.dispose();
+
         return gray;
     }
 
-    private BufferedImage increaseContrast(BufferedImage image) {
+    private BufferedImage binarize(BufferedImage image) {
+
+        BufferedImage binary = new BufferedImage(
+                image.getWidth(),
+                image.getHeight(),
+                BufferedImage.TYPE_BYTE_BINARY
+        );
 
         for (int y = 0; y < image.getHeight(); y++) {
             for (int x = 0; x < image.getWidth(); x++) {
 
                 int rgb = image.getRGB(x, y);
-                int gray = (rgb >> 16) & 0xff;
 
-                int newValue = (gray > 128) ? 255 : 0;
-                int newRgb = (newValue << 16) | (newValue << 8) | newValue;
+                int gray = rgb & 0xff;
 
-                image.setRGB(x, y, newRgb);
+                int value = (gray > 140) ? 255 : 0;
+
+                int newRgb = (value << 16) | (value << 8) | value;
+
+                binary.setRGB(x, y, newRgb);
             }
         }
-        return image;
+
+        return binary;
     }
 
     // ============================
-    // JSON inteligente
+    // JSON INTELIGENTE
     // ============================
 
     private Object parseNestedJson(String content) {
@@ -178,77 +163,6 @@ public class QrService {
             Map<String, Object> result = new HashMap<>();
 
             for (Map.Entry<?, ?> entry : map.entrySet()) {
-                Object value = entry.getValue();
-
-                if (value instanceof String strValue) {
-                    String trimmed = strValue.trim();
-                    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-                        try {
-                            Object nested = mapper.readValue(trimmed, Object.class);
-                            result.put(entry.getKey().toString(), parseRecursively(nested));
-                            continue;
-                        } catch (Exception ignored) {}
-                    }
-                }
-
-                result.put(entry.getKey().toString(), parseRecursively(value));
-            }
-
-            return result;
-        }
-
-        if (obj instanceof List<?> list) {
-            List<Object> parsedList = new ArrayList<>();
-            for (Object item : list) {
-                parsedList.add(parseRecursively(item));
-            }
-            return parsedList;
-        }
-
-        return obj;
-    }
-
-    /*public Object decodeQR(InputStream inputStream) throws Exception {
-
-        // 1️⃣ Leer imagen
-        BufferedImage bufferedImage = ImageIO.read(inputStream);
-
-        LuminanceSource source = new BufferedImageLuminanceSource(bufferedImage);
-        BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(source));
-
-        Reader reader = new MultiFormatReader();
-        Result result = reader.decode(bitmap);
-
-        String qrContent = result.getText();
-
-        // 2️⃣ Intentar convertir a JSON automáticamente
-        return parseNestedJson(qrContent);
-    }
-
-    /**
-     * Convierte automáticamente String JSON y JSON anidados
-     */
-    /*private Object parseNestedJson(String content) {
-
-        try {
-            Object parsed = mapper.readValue(content, Object.class);
-            return parseRecursively(parsed);
-        } catch (Exception e) {
-            // Si no es JSON válido, retorna como texto plano
-            return content;
-        }
-    }*/
-
-    /**
-     * Detecta JSON dentro de Strings y los convierte en JSON real
-     */
-    /*private Object parseRecursively(Object obj) {
-
-        if (obj instanceof Map<?, ?> map) {
-
-            Map<String, Object> result = new HashMap<>();
-
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
 
                 Object value = entry.getValue();
 
@@ -280,5 +194,6 @@ public class QrService {
         }
 
         return obj;
-    }*/
+    }
+
 }
