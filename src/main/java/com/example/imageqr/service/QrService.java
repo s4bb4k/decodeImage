@@ -7,9 +7,11 @@ import com.google.zxing.common.HybridBinarizer;
 import org.opencv.core.*;
 import org.opencv.objdetect.QRCodeDetector;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
+import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.io.InputStream;
 import java.util.*;
@@ -196,4 +198,95 @@ public class QrService {
         return obj;
     }
 
+
+    public String readQRCode(MultipartFile file) throws Exception {
+
+        if (file.isEmpty()) {
+            throw new Exception("Archivo vacío");
+        }
+
+        if (file.getContentType() == null || !file.getContentType().startsWith("image/")) {
+            throw new Exception("El archivo no es una imagen válida");
+        }
+
+        InputStream inputStream = file.getInputStream();
+        BufferedImage originalImage = ImageIO.read(inputStream);
+
+        if (originalImage == null) {
+            throw new Exception("No se pudo procesar la imagen");
+        }
+
+        // Convertir a escala de grises
+        BufferedImage grayImage = convertToGrayscale(originalImage);
+
+        // Intentar lectura en múltiples rotaciones
+        int[] angles = {0, 90, 180, 270, -15, 15, -30, 30};
+
+        for (int angle : angles) {
+            try {
+                BufferedImage rotated = rotateImage(grayImage, angle);
+                String result = decode(rotated);
+                if (result != null) {
+                    return result;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        throw new Exception("No se pudo leer el código QR incluso con rotación");
+    }
+
+    private String decode(BufferedImage image) throws NotFoundException {
+        LuminanceSource source = new BufferedImageLuminanceSource(image);
+        BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(source));
+
+        Map<DecodeHintType, Object> hints = new HashMap<>();
+        hints.put(DecodeHintType.TRY_HARDER, Boolean.TRUE);
+
+        Result result = new MultiFormatReader().decode(bitmap, hints);
+        return result.getText();
+    }
+
+    private BufferedImage convertToGrayscale(BufferedImage original) {
+        BufferedImage gray = new BufferedImage(
+                original.getWidth(),
+                original.getHeight(),
+                BufferedImage.TYPE_BYTE_GRAY
+        );
+        Graphics g = gray.getGraphics();
+        g.drawImage(original, 0, 0, null);
+        g.dispose();
+        return gray;
+    }
+
+    private BufferedImage rotateImage(BufferedImage image, double angle) {
+
+        double radians = Math.toRadians(angle);
+        double sin = Math.abs(Math.sin(radians));
+        double cos = Math.abs(Math.cos(radians));
+
+        int w = image.getWidth();
+        int h = image.getHeight();
+
+        int newWidth = (int) Math.floor(w * cos + h * sin);
+        int newHeight = (int) Math.floor(h * cos + w * sin);
+
+        BufferedImage rotated = new BufferedImage(
+                newWidth,
+                newHeight,
+                BufferedImage.TYPE_BYTE_GRAY
+        );
+
+        Graphics2D g2d = rotated.createGraphics();
+        AffineTransform at = new AffineTransform();
+
+        at.translate((newWidth - w) / 2, (newHeight - h) / 2);
+        at.rotate(radians, w / 2.0, h / 2.0);
+
+        g2d.setTransform(at);
+        g2d.drawImage(image, 0, 0, null);
+        g2d.dispose();
+
+        return rotated;
+    }
 }
