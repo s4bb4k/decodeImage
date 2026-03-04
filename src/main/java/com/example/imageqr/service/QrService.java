@@ -1,11 +1,15 @@
 package com.example.imageqr.service;
 
+import com.example.imageqr.dto.ErrorResponse;
+import com.example.imageqr.dto.QrRequestParseDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.zxing.*;
 import com.google.zxing.client.j2se.BufferedImageLuminanceSource;
 import com.google.zxing.common.HybridBinarizer;
 import org.opencv.core.*;
 import org.opencv.objdetect.QRCodeDetector;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -61,7 +65,8 @@ public class QrService {
                 Result result = reader.decode(bitmap, hints);
                 return result.getText();
 
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
 
             image = rotateImage(image);
         }
@@ -177,7 +182,8 @@ public class QrService {
                             Object nested = mapper.readValue(trimmed, Object.class);
                             result.put(entry.getKey().toString(), parseRecursively(nested));
                             continue;
-                        } catch (Exception ignored) {}
+                        } catch (Exception ignored) {
+                        }
                     }
                 }
 
@@ -199,41 +205,63 @@ public class QrService {
     }
 
 
-    public String readQRCode(MultipartFile file) throws Exception {
+    public ResponseEntity<?> readQRCode(MultipartFile file) throws Exception {
+        try {
 
-        if (file.isEmpty()) {
-            throw new Exception("Archivo vacío");
-        }
-
-        if (file.getContentType() == null || !file.getContentType().startsWith("image/")) {
-            throw new Exception("El archivo no es una imagen válida");
-        }
-
-        InputStream inputStream = file.getInputStream();
-        BufferedImage originalImage = ImageIO.read(inputStream);
-
-        if (originalImage == null) {
-            throw new Exception("No se pudo procesar la imagen");
-        }
-
-        // Convertir a escala de grises
-        BufferedImage grayImage = convertToGrayscale(originalImage);
-
-        // Intentar lectura en múltiples rotaciones
-        int[] angles = {0, 90, 180, 270, -15, 15, -30, 30};
-
-        for (int angle : angles) {
-            try {
-                BufferedImage rotated = rotateImage(grayImage, angle);
-                String result = decode(rotated);
-                if (result != null) {
-                    return result;
-                }
-            } catch (Exception ignored) {
+            if (file.isEmpty()) {
+                System.out.println("-------->  entro");
+                return ResponseEntity
+                        .badRequest()
+                        .body(new ErrorResponse("QR-001", "Archivo vacío"));
             }
-        }
 
-        throw new Exception("No se pudo leer el código QR incluso con rotación");
+            if (file.getContentType() == null || !file.getContentType().startsWith("image/")) {
+                return ResponseEntity
+                        .badRequest()
+                        .body(new ErrorResponse("QR-002", "El archivo no es una imagen válida"));
+            }
+
+            InputStream inputStream = file.getInputStream();
+            BufferedImage originalImage = ImageIO.read(inputStream);
+
+            if (originalImage == null) {
+                return ResponseEntity
+                        .badRequest()
+                        .body(new ErrorResponse("QR-003", "No se pudo procesar la imagen"));
+            }
+
+            BufferedImage grayImage = convertToGrayscale(originalImage);
+
+            int[] angles = {0, 90, 180, 270, -15, 15, -30, 30};
+
+            for (int angle : angles) {
+                try {
+
+                    BufferedImage rotated = rotateImage(grayImage, angle);
+                    String result = decode(rotated);
+
+                    if (result != null) {
+
+                        QrRequestParseDto dto = new QrRequestParseDto(result);
+
+                        // 🔥 Retorna directamente
+                        return parseQrPresent(dto);
+                    }
+
+                } catch (Exception ignored) {
+                }
+            }
+
+            return ResponseEntity
+                    .status(HttpStatus.UNPROCESSABLE_ENTITY)
+                    .body(new ErrorResponse("QR-004", "No se pudo leer el código QR"));
+
+        } catch (Exception e) {
+
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("QR-500", "Error interno procesando el QR"));
+        }
     }
 
     private String decode(BufferedImage image) throws NotFoundException {
@@ -289,4 +317,10 @@ public class QrService {
 
         return rotated;
     }
+
+    public ResponseEntity<?> parseQrPresent(QrRequestParseDto emvco) {
+        System.out.println("parseQrPresent" + emvco);
+        return null;
+    }
+
 }

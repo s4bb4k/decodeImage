@@ -44,8 +44,8 @@ public class QrController {
     @PostMapping("/read")
     public ResponseEntity<?> readQR(@RequestParam("file") MultipartFile file) {
         try {
-            String result = qrService.readQRCode(file);
-            return ResponseEntity.ok(result);
+            ResponseEntity<?> result = qrService.readQRCode(file);
+            return ResponseEntity.ok(result.getBody());
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Error leyendo QR: " + e.getMessage());
         }
