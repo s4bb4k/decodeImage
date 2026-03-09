@@ -1,6 +1,8 @@
 package com.example.imageqr.controller;
 
+import com.example.imageqr.dto.ApiResponse;
 import com.example.imageqr.dto.QrDecodeResponse;
+import com.example.imageqr.dto.QrResponse;
 import com.example.imageqr.service.QrService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -8,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -50,4 +53,16 @@ public class QrController {
             return ResponseEntity.badRequest().body("Error leyendo QR: " + e.getMessage());
         }
     }
+
+    @GetMapping("/{qrId}")
+    public ResponseEntity<?> getQrByPerson(@PathVariable String personId) {
+
+        List<QrResponse> qrList = qrService.getActiveQrByPerson(personId);
+
+        ApiResponse<QrResponse> response =
+                new ApiResponse<>("0", "success", qrList);
+
+        return ResponseEntity.ok(response);
+    }
+
 }

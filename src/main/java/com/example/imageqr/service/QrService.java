@@ -2,6 +2,7 @@ package com.example.imageqr.service;
 
 import com.example.imageqr.dto.ErrorResponse;
 import com.example.imageqr.dto.QrRequestParseDto;
+import com.example.imageqr.dto.QrResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.zxing.*;
 import com.google.zxing.client.j2se.BufferedImageLuminanceSource;
@@ -20,6 +21,7 @@ import java.awt.image.BufferedImage;
 import java.io.InputStream;
 import java.util.*;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class QrService {
@@ -323,4 +325,26 @@ public class QrService {
         return null;
     }
 
+    public List<QrResponse> getActiveQrByPerson(String personId) {
+
+        //List<QrEntity> qrList =
+        //        qrRepository.findByPersonIdAndStatus(personId, "ACTIVE");
+
+        return null;
+        //return qrList.stream().map(this::mapToDto).collect(Collectors.toList());
+    }
+
+    /*private QrResponse mapToDto(QrEntity entity) {
+
+        QrResponse dto = new QrResponse();
+
+        dto.setAliasValue(entity.getAliasValue());
+        dto.setAliasType(entity.getAliasType());
+        dto.setPersonId(entity.getPersonId());
+        dto.setCity(entity.getCity());
+        dto.setAmount(entity.getAmount());
+        dto.setQrImage(entity.getQrImage());
+
+        return dto;
+    }*/
 }
