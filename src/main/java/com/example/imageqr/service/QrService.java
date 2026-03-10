@@ -18,6 +18,7 @@ import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
 import java.util.List;
@@ -347,4 +348,98 @@ public class QrService {
 
         return dto;
     }*/
+
+    public ResponseEntity<?> readQr(InputStream imageStream) throws Exception {
+        try {
+
+            BufferedImage originalImage = ImageIO.read(imageStream);
+
+            if (originalImage == null) {
+                return ResponseEntity
+                        .badRequest()
+                        .body(new ErrorResponse("QR-003", "No se pudo procesar la imagen"));
+            }
+
+            int[] rotations = {0, 90, 180, 270};
+
+            for (int angle : rotations) {
+
+                BufferedImage rotated = rotateImage(originalImage, angle);
+
+                try {
+
+                    LuminanceSource source = new BufferedImageLuminanceSource(rotated);
+
+                    BinaryBitmap bitmap = new BinaryBitmap(
+                            new HybridBinarizer(source)
+                    );
+
+                    Result result = new MultiFormatReader().decode(bitmap);
+
+                    String qrText = result.getText();
+
+                    // 🔥 enviar resultado a otro método del mismo service
+                   // return processQr(qrText);
+                    return null;
+                } catch (NotFoundException e) {
+                    // intenta con otra rotación
+                }
+            }
+
+            return ResponseEntity
+                    .status(HttpStatus.UNPROCESSABLE_ENTITY)
+                    .body(new ErrorResponse("QR-004", "QR no encontrado"));
+
+        } catch (IOException e) {
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(new ErrorResponse("QR-005", "Error leyendo la imagen"));
+
+        } catch (Exception e) {
+
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("QR-500", "Error interno procesando QR"));
+        }
+    }
+
+    private BufferedImage rotateImage(BufferedImage image, int angle) {
+
+        if (angle == 0) return image;
+
+        int width = image.getWidth();
+        int height = image.getHeight();
+
+        BufferedImage rotated;
+
+        if (angle == 90 || angle == 270) {
+            rotated = new BufferedImage(height, width, image.getType());
+        } else {
+            rotated = new BufferedImage(width, height, image.getType());
+        }
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+
+                switch (angle) {
+
+                    case 90:
+                        rotated.setRGB(height - 1 - y, x, image.getRGB(x, y));
+                        break;
+
+                    case 180:
+                        rotated.setRGB(width - 1 - x, height - 1 - y, image.getRGB(x, y));
+                        break;
+
+                    case 270:
+                        rotated.setRGB(y, width - 1 - x, image.getRGB(x, y));
+                        break;
+                }
+            }
+        }
+
+        return rotated;
+    }
+
 }

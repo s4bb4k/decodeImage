@@ -1,6 +1,7 @@
 package com.example.imageqr.controller;
 
 import com.example.imageqr.dto.ApiResponse;
+import com.example.imageqr.dto.ErrorResponse;
 import com.example.imageqr.dto.QrDecodeResponse;
 import com.example.imageqr.dto.QrResponse;
 import com.example.imageqr.service.QrService;
@@ -63,6 +64,20 @@ public class QrController {
                 new ApiResponse<>("0", "success", qrList);
 
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/read2")
+    public ResponseEntity<?> readQr(@RequestParam("file") MultipartFile file) throws Exception {
+
+        if (file.isEmpty()) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(new ErrorResponse("QR-001", "Archivo vacío"));
+        }
+
+        ResponseEntity<?> qr = qrService.readQr(file.getInputStream());
+
+        return ResponseEntity.ok(qr.getBody());
     }
 
 }
